@@ -1,14 +1,20 @@
 package com.example.loganjoe1997.goosealert;
 
+import android.app.NotificationManager;
+import android.app.PendingIntent;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
-import android.graphics.Bitmap;
-import android.graphics.BitmapFactory;
 import android.location.Location;
+import android.location.LocationManager;
+import android.net.Uri;
+import android.os.Vibrator;
+import android.support.v4.app.NotificationCompat;
+import android.support.v4.app.TaskStackBuilder;
 import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
 import android.util.Log;
+import android.widget.Toast;
 
 import com.android.volley.Request;
 import com.android.volley.RequestQueue;
@@ -29,17 +35,19 @@ import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.util.ArrayList;
-import java.util.List;
 
 public class MainActivity extends AppCompatActivity {
 
     private static final String TAG = "MainActivity";
 
     private GoogleMap mMap;
-    private LatLng mLocation;
+    private Location mLastLocation;
     private Marker mSelf;
-    private BroadcastReceiver mReceiver;
+    private LocationManager mLocationManager;
+    private LocationListener mListener;
     private ArrayList<Nest> mNests;
+
+    private boolean mInDanger;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -50,18 +58,13 @@ public class MainActivity extends AppCompatActivity {
             makeRequest();
         }
 
-        mReceiver = new BroadcastReceiver() {
-            @Override
-            public void onReceive(Context context, Intent intent) {
-                mLocation = new LatLng(intent.getDoubleExtra("latitude", 0f),
-                        intent.getDoubleExtra("longitude", 0f));
-                if (mSelf == null) {
-                    mSelf = mMap.addMarker(new MarkerOptions().position(mLocation));
-                } else {
-                    mSelf.setPosition(mLocation);
-                }
-            }
-        };
+        mLocationManager = (LocationManager) getSystemService(Context.LOCATION_SERVICE);
+        mListener = new LocationListener();
+        try {
+            mLocationManager.requestLocationUpdates(LocationManager.NETWORK_PROVIDER, 0, 0.1f, mListener);
+        } catch (SecurityException e) {
+            e.printStackTrace();
+        }
 
         mNests = new ArrayList<>();
     }
@@ -90,18 +93,12 @@ public class MainActivity extends AppCompatActivity {
                             Log.d(TAG, "Received api response");
 
                             // MOCK DATA
-                            mNests.add(new Nest(999, new LatLng(43.47320f, -80.54387f), "TEST", null));
+                            mNests.add(new Nest(999, new LatLng(43.47315f, -80.54387f), "TEST", null));
 
                             for (Nest nest : mNests) {
                                 mMap.addMarker(new MarkerOptions()
                                         .position(nest.getLatLng())
                                         .icon(BitmapDescriptorFactory.fromResource(R.drawable.ic_goose)));
-                            }
-
-                            if (!GooseService.getIsRunning()) {
-                                Intent intent = new Intent(MainActivity.this, GooseService.class);
-                                intent.putParcelableArrayListExtra("nests", mNests);
-                                startService(intent);
                             }
                         } catch (JSONException e) {
                             e.printStackTrace();
@@ -116,13 +113,6 @@ public class MainActivity extends AppCompatActivity {
                 });
 
         requestQueue.add(stringRequest);
-    }
-
-    @Override
-    protected void onDestroy() {
-        super.onDestroy();
-
-//        stopService(new Intent(this, GooseService.class));
     }
 
     @Override
@@ -147,5 +137,93 @@ public class MainActivity extends AppCompatActivity {
 
     private void setUpMap() {
         mMap.moveCamera(CameraUpdateFactory.newLatLngZoom(new LatLng(43.47327f, -80.54385f), 15));
+    }
+
+    private class LocationListener implements android.location.LocationListener {
+
+        public LocationListener() {}
+
+        @Override
+        public void onLocationChanged(Location location) {
+            Log.d(TAG, "onLocationChanged: " + location.getLatitude() + " " + location.getLongitude());
+            Toast.makeText(MainActivity.this, "onLocationChanged: " + location.getLatitude() + " " + location.getLongitude(),
+                    Toast.LENGTH_SHORT).show();
+
+            mLastLocation = location;
+            LatLng latLng = new LatLng(mLastLocation.getLatitude(), mLastLocation.getLongitude());
+
+            boolean prevInDanger = mInDanger;
+
+            boolean inDanger = false;
+            for (Nest nest : mNests) {
+                if (distanceFormula(nest.getLatLng(), latLng) < 0.0001) {
+                    inDanger = true;
+                }
+            }
+
+            if (mSelf == null) {
+                mSelf = mMap.addMarker(new MarkerOptions().position(latLng));
+            } else {
+                mSelf.setPosition(latLng);
+            }
+
+            mInDanger = inDanger;
+            if (mInDanger) {
+                Log.d(TAG, "IN DANGER ZONE");
+            }
+            if (!prevInDanger && mInDanger) {
+//                MainActivity.startActivity(GooseService.this);
+                Log.d(TAG, "NOTIFICATION");
+
+                Intent launchActivity = new Intent(getApplicationContext(), MainActivity.class);
+
+                TaskStackBuilder stackBuilder = TaskStackBuilder.create(MainActivity.this);
+                stackBuilder.addParentStack(MainActivity.class);
+                stackBuilder.addNextIntent(launchActivity);
+
+                PendingIntent pendingIntent = stackBuilder.getPendingIntent(0, PendingIntent.FLAG_UPDATE_CURRENT);
+
+                Uri sound = Uri.parse("android.resource://" + getPackageName() + "/" + R.raw.goose_sound);
+
+                NotificationCompat.Builder builder = new NotificationCompat.Builder(MainActivity.this);
+                builder.setSmallIcon(R.drawable.ic_goose)
+                        .setContentTitle("WARNING")
+                        .setContentText("WOW")
+                        .setContentIntent(pendingIntent)
+                        .setSound(sound);
+
+                NotificationManager notificationManager =
+                        (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+                notificationManager.notify(123, builder.build());
+
+                Vibrator vibrator = (Vibrator) getSystemService(Context.VIBRATOR_SERVICE);
+                vibrator.vibrate(new long[] {500, 500, 500, 500, 500, 500}, -1);
+
+
+            }
+        }
+
+        @Override
+        public void onStatusChanged(String provider, int status, Bundle extras) {
+
+        }
+
+        @Override
+        public void onProviderEnabled(String provider) {
+
+        }
+
+        @Override
+        public void onProviderDisabled(String provider) {
+
+        }
+    }
+
+    private double distanceFormula(LatLng a, LatLng b) {
+        return Math.sqrt(sqr(a.latitude - b.latitude) + sqr(a.longitude - b.longitude));
+    }
+
+    private double sqr(double a) {
+        return a * a;
     }
 }
