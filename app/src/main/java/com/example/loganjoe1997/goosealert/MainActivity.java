@@ -93,12 +93,16 @@ public class MainActivity extends AppCompatActivity {
                             Log.d(TAG, "Received api response");
 
                             // MOCK DATA
-                            mNests.add(new Nest(999, new LatLng(43.47315f, -80.54387f), "TEST", null));
+                            mNests.add(new Nest(999, new LatLng(43.47315f, -80.54387f),
+                                    "Large flock of geese inside M3 1006",
+                                    null));
 
                             for (Nest nest : mNests) {
                                 mMap.addMarker(new MarkerOptions()
                                         .position(nest.getLatLng())
-                                        .icon(BitmapDescriptorFactory.fromResource(R.drawable.ic_goose)));
+                                        .icon(BitmapDescriptorFactory.fromResource(R.drawable.ic_goose))
+                                        .title("Goose nest")
+                                        .snippet(nest.getLocationDescription()));
                             }
                         } catch (JSONException e) {
                             e.printStackTrace();
