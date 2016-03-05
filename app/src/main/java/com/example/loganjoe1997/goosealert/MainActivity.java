@@ -190,7 +190,8 @@ public class MainActivity extends AppCompatActivity {
                         .setContentTitle("WARNING")
                         .setContentText("WOW")
                         .setContentIntent(pendingIntent)
-                        .setSound(sound);
+                        .setSound(sound)
+                        .setAutoCancel(true);
 
                 NotificationManager notificationManager =
                         (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
